@@ -263,8 +263,14 @@ def run_bo_continuous(
 
         mll = SumMarginalLogLikelihood(model.likelihood, model)
         
+        import warnings
+        from botorch.exceptions.warnings import OptimizationWarning
+        
         try:
-            fit_gpytorch_mll(mll)
+            with warnings.catch_warnings():
+                warnings.filterwarnings("ignore", category=OptimizationWarning)
+                with gpytorch.settings.cholesky_jitter(1e-3):
+                    fit_gpytorch_mll(mll)
         except Exception as e:
             print(f"GP fitting stopped early at iteration {i+1} due to numerical instability: {e}")
             break
@@ -372,7 +378,7 @@ if __name__ == "__main__":
     print(f"Initializing Data Module (Max Temp: {MAX_TEMP})...")
     dm = BODataModule(
         data_path=DATA_PATH,
-        n_init=10,
+        n_init=15,
         init_method='max_min_dist',
         target="both",
         max_temp=MAX_TEMP,
@@ -385,7 +391,7 @@ if __name__ == "__main__":
     print(f"Initial best CH4 Conversion: {initial_best_ch4:.2f}%")
     print(f"Initial best CO2 Conversion: {initial_best_co2:.2f}%")
 
-    print("\nInitial 10 points (Train Set):")
+    print("\nInitial 15 points (Train Set):")
     # Feature columns as defined in BODataModule.setup
     feature_cols = [
         'Ratio of CH4 in Feed', 'Reaction Temperature', 'Ni Loading',

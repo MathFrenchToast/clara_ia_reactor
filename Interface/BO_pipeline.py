@@ -167,6 +167,41 @@ class BODataModule(pl.LightningDataModule):
         if self.max_feed is not None:
             df = df[df['Ratio of CH4 in Feed'] <= self.max_feed]
 
+        # Filter by temperature constraint if provided
+        if self.max_temp is not None:
+            df = df[df['Reaction Temperature'] <= self.max_temp]
+
+        # Filter by Ni loading constraint if provided
+        if self.max_loading is not None:
+            df = df[df['Ni Loading'] <= self.max_loading]
+
+        # Filter by reaction time constraint if provided
+        if self.max_time is not None:
+            df = df[df['Reaction Time'] <= self.max_time]
+
+        # Filter by pore size constraint if provided
+        if self.max_pore_size is not None:
+            df = df[df['Pore Size'] <= self.max_pore_size]
+
+        # Filter by pore volume constraint if provided
+        if self.max_pore_volume is not None:
+            df = df[df['Pore Volume'] <= self.max_pore_volume]
+        
+        # Filter by surface area constraint if provided
+        if self.max_surface_area is not None:
+            df = df[df['Surface Area'] <= self.max_surface_area]
+
+        # Filter by H2-TPR Peak Temperature constraint if provided
+        if self.max_H2_TPR_peak_temp is not None:
+            df = df[df['H2-TPR Peak Temperature'] <= self.max_H2_TPR_peak_temp]
+
+        # Filter by Ni particle size constraint if provided
+        if self.max_particle_size is not None:
+            df = df[df['Ni Particle Size'] <= self.max_particle_size]
+
+        # Filter by GHSV constraint if provided
+        if self.max_ghsv is not None:
+            df = df[df['GHSV'] <= self.max_ghsv]
 
         feature_cols = [
             'Ratio of CH4 in Feed', 'Reaction Temperature', 'Ni Loading',
@@ -352,6 +387,8 @@ def run_bo_continuous(
         best_ch4_history.append(best_ch4)
         best_co2_history.append(best_co2)
         
+        print(f"--> Current Best CH4: {best_ch4:.2f}%, Current Best CO2: {best_co2:.2f}%")
+        
     # Format the final suggested parameters for the Streamlit UI mapping
     next_best_params = {}
     if new_x is not None:
@@ -426,7 +463,7 @@ if __name__ == "__main__":
         dm=dm,
         bounds=bounds,
         feature_names=feature_cols,
-        num_iterations=10  # Short run for testing
+        num_iterations=30  # Increased for better convergence in 20D space
     )
     
     train_x, train_y, hv_hist, ch4_hist, co2_hist, next_params = results

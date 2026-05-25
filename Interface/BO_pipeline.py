@@ -335,8 +335,8 @@ def run_bo_continuous(
             acq_function=acq_func,
             bounds=bounds_opt,
             q=1,
-            num_restarts=15,
-            raw_samples=100,
+            num_restarts=20,
+            raw_samples=1024,
         )
 
         new_x = candidate.detach()
@@ -380,14 +380,16 @@ def run_bo_continuous(
         hv_value = hv.compute(pareto_y)
         hypervolume_history.append(hv_value)
 
-        # 9. SUIVI DES SCORES
-        best_ch4 = train_y[:, 0].max().item()
-        best_co2 = train_y[:, 1].max().item()
+        # 9. SUIVI DES SCORES (Single best experiment based on sum of conversions)
+        sums = train_y.sum(dim=1)
+        best_idx = sums.argmax()
+        best_ch4 = train_y[best_idx, 0].item()
+        best_co2 = train_y[best_idx, 1].item()
 
         best_ch4_history.append(best_ch4)
         best_co2_history.append(best_co2)
         
-        print(f"--> Current Best CH4: {best_ch4:.2f}%, Current Best CO2: {best_co2:.2f}%")
+        print(f"--> Current Best Point - CH4: {best_ch4:.2f}%, CO2: {best_co2:.2f}%")
         
     # Format the final suggested parameters for the Streamlit UI mapping
     next_best_params = {}
@@ -422,11 +424,12 @@ if __name__ == "__main__":
         seed=42
     )
     
-    # Show initial best values
-    initial_best_ch4 = dm.train_y[:, 0].max().item()
-    initial_best_co2 = dm.train_y[:, 1].max().item()
-    print(f"Initial best CH4 Conversion: {initial_best_ch4:.2f}%")
-    print(f"Initial best CO2 Conversion: {initial_best_co2:.2f}%")
+    # Show initial best values (Single best experiment based on sum of conversions)
+    init_sums = dm.train_y.sum(dim=1)
+    init_best_idx = init_sums.argmax()
+    initial_best_ch4 = dm.train_y[init_best_idx, 0].item()
+    initial_best_co2 = dm.train_y[init_best_idx, 1].item()
+    print(f"Initial Best Point - CH4 Conversion: {initial_best_ch4:.2f}% | CO2 Conversion: {initial_best_co2:.2f}%")
 
     print("\nInitial 15 points (Train Set):")
     # Feature columns as defined in BODataModule.setup
@@ -463,7 +466,7 @@ if __name__ == "__main__":
         dm=dm,
         bounds=bounds,
         feature_names=feature_cols,
-        num_iterations=30  # Increased for better convergence in 20D space
+        num_iterations=20  # Increased for better convergence in 20D space
     )
     
     train_x, train_y, hv_hist, ch4_hist, co2_hist, next_params = results

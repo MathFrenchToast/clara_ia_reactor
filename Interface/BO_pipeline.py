@@ -300,10 +300,12 @@ def run_bo_continuous(
         
         import warnings
         from botorch.exceptions.warnings import OptimizationWarning
+        from linear_operator.utils.warnings import NumericalWarning
         
         try:
             with warnings.catch_warnings():
                 warnings.filterwarnings("ignore", category=OptimizationWarning)
+                warnings.filterwarnings("ignore", category=NumericalWarning)
                 with gpytorch.settings.cholesky_jitter(1e-3):
                     fit_gpytorch_mll(mll)
         except Exception as e:
@@ -466,7 +468,7 @@ if __name__ == "__main__":
         dm=dm,
         bounds=bounds,
         feature_names=feature_cols,
-        num_iterations=20  # Increased for better convergence in 20D space
+        num_iterations=30  # Increased for better convergence in 20D space
     )
     
     train_x, train_y, hv_hist, ch4_hist, co2_hist, next_params = results

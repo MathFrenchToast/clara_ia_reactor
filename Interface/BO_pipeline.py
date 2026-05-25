@@ -8,7 +8,11 @@ from scipy.spatial.distance import cdist
 # Scikit-learn imports
 from sklearn.preprocessing import StandardScaler
 from sklearn.cluster import KMeans
-from sklearn_extra.cluster import KMedoids
+try:
+    from sklearn_extra.cluster import KMedoids
+    HAS_KMEDOIDS = True
+except ImportError:
+    HAS_KMEDOIDS = False
 
 # BoTorch & GPyTorch imports
 import gpytorch
@@ -72,6 +76,9 @@ class BOInitData:
         return init_method(X_scaled)
 
     def kmedoids(self, X_scaled):
+        if not HAS_KMEDOIDS:
+            raise ImportError("The 'scikit-learn-extra' package is required to use the 'kmedoids' method. "
+                              "Please install it or use another method (e.g., 'max_min_dist' or 'kmeans').")
         kmedoids = KMedoids(
             n_clusters=self.n,
             init=self.cluster_init,
@@ -117,10 +124,20 @@ class BOInitData:
 class BODataModule(pl.LightningDataModule):
     def __init__(
         self,
-        data_path: str = "FINAL_FEATURIZED_DATA.csv",
+        data_path: str = "Interface/data/v2c_featurized_ml_ready.csv",
         n_init: int = 15,
         init_method: str = 'max_min_dist',
         target: str = "both",      # "both", "CH4", ou "CO2"
+        max_feed: Optional[float] = None,
+        max_temp: Optional[float] = None,
+        max_time: Optional[float] = None,
+        max_loading: Optional[float] = None,
+        max_pore_size: Optional[float] = None,
+        max_pore_volume: Optional[float] = None,
+        max_surface_area: Optional[float] = None,
+        max_H2_TPR_peak_temp: Optional[float] = None,
+        max_particle_size: Optional[float] = None,
+        max_ghsv: Optional[float] = None,
         seed: int = 42,
     ):
         super().__init__()
@@ -128,6 +145,16 @@ class BODataModule(pl.LightningDataModule):
         self.n_init = n_init
         self.init_method = init_method
         self.target = target
+        self.max_feed = max_feed
+        self.max_temp = max_temp
+        self.max_loading = max_loading
+        self.max_time = max_time
+        self.max_pore_size = max_pore_size
+        self.max_pore_volume = max_pore_volume
+        self.max_surface_area = max_surface_area
+        self.max_H2_TPR_peak_temp = max_H2_TPR_peak_temp
+        self.max_particle_size = max_particle_size
+        self.max_ghsv = max_ghsv
         self.seed = seed
 
         self.init_data = BOInitData(n=n_init, method=init_method, seed=seed)
@@ -136,10 +163,51 @@ class BODataModule(pl.LightningDataModule):
     def setup(self, stage: Optional[str] = None) -> None:
         df = pd.read_csv(self.data_path)
 
+        # Filter by Ratio of CH4 in Feed constraint if provided
+        if self.max_feed is not None:
+            df = df[df['Ratio of CH4 in Feed'] <= self.max_feed]
+
+        # Filter by temperature constraint if provided
+        if self.max_temp is not None:
+            df = df[df['Reaction Temperature'] <= self.max_temp]
+
+        # Filter by Ni loading constraint if provided
+        if self.max_loading is not None:
+            df = df[df['Ni Loading'] <= self.max_loading]
+
+        # Filter by reaction time constraint if provided
+        if self.max_time is not None:
+            df = df[df['Reaction Time'] <= self.max_time]
+
+        # Filter by pore size constraint if provided
+        if self.max_pore_size is not None:
+            df = df[df['Pore Size'] <= self.max_pore_size]
+
+        # Filter by pore volume constraint if provided
+        if self.max_pore_volume is not None:
+            df = df[df['Pore Volume'] <= self.max_pore_volume]
+        
+        # Filter by surface area constraint if provided
+        if self.max_surface_area is not None:
+            df = df[df['Surface Area'] <= self.max_surface_area]
+
+        # Filter by H2-TPR Peak Temperature constraint if provided
+        if self.max_H2_TPR_peak_temp is not None:
+            df = df[df['H2-TPR Peak Temperature'] <= self.max_H2_TPR_peak_temp]
+
+        # Filter by Ni particle size constraint if provided
+        if self.max_particle_size is not None:
+            df = df[df['Ni Particle Size'] <= self.max_particle_size]
+
+        # Filter by GHSV constraint if provided
+        if self.max_ghsv is not None:
+            df = df[df['GHSV'] <= self.max_ghsv]
+
         feature_cols = [
             'Ratio of CH4 in Feed', 'Reaction Temperature', 'Ni Loading',
             'Reaction Time', 'Pore Size', 'Pore Volume', 'Surface Area',
-            'H2-TPR Peak Temperature', 'Ni Particle Size', 'GHSV'
+            'H2-TPR Peak Temperature', 'Ni Particle Size', 'GHSV', 'PC1', 
+            'PC2', 'PC3', 'PC4', 'PC5', 'PC6', 'PC7', 'PC8', 'PC9', 'PC10'
         ]
 
         X = df[feature_cols].values.astype(np.float64)
@@ -311,3 +379,75 @@ def run_bo_continuous(
         np.array(best_co2_history),
         next_best_params
     )
+
+# Alias for backward compatibility or user preference
+run_bo_optimization = run_bo_continuous
+
+if __name__ == "__main__":
+    # Test script for the BO pipeline
+    DATA_PATH = "Interface/data/v2c_featurized_ml_ready.csv"
+    MAX_TEMP = 700.0  # Constraint for the reactor
+    
+    # Initialize Data Module
+    print(f"Initializing Data Module (Max Temp: {MAX_TEMP})...")
+    dm = BODataModule(
+        data_path=DATA_PATH,
+        n_init=10,
+        init_method='max_min_dist',
+        target="both",
+        max_temp=MAX_TEMP,
+        seed=42
+    )
+    
+    # Show initial best values
+    initial_best_ch4 = dm.train_y[:, 0].max().item()
+    initial_best_co2 = dm.train_y[:, 1].max().item()
+    print(f"Initial best CH4 Conversion: {initial_best_ch4:.2f}%")
+    print(f"Initial best CO2 Conversion: {initial_best_co2:.2f}%")
+
+    print("\nInitial 10 points (Train Set):")
+    # Feature columns as defined in BODataModule.setup
+    feature_cols = [
+        'Ratio of CH4 in Feed', 'Reaction Temperature', 'Ni Loading',
+        'Reaction Time', 'Pore Size', 'Pore Volume', 'Surface Area',
+        'H2-TPR Peak Temperature', 'Ni Particle Size', 'GHSV',
+        'PC1', 'PC2', 'PC3', 'PC4', 'PC5', 'PC6', 'PC7', 'PC8', 'PC9', 'PC10'
+    ]
+    
+    train_df = pd.DataFrame(dm.train_x.numpy(), columns=feature_cols)
+    train_df['CH4 Conv'] = dm.train_y[:, 0].numpy()
+    train_df['CO2 Conv'] = dm.train_y[:, 1].numpy()
+    print(train_df.to_string(index=False))
+    
+    # Define bounds from the dataset
+    df = pd.read_csv(DATA_PATH)
+    # Apply the same filter for bound calculation
+    df_filtered = df[df['Reaction Temperature'] <= MAX_TEMP]
+    X_data = df_filtered[feature_cols].values
+    
+    min_bounds = torch.tensor(np.nanmin(X_data, axis=0), dtype=torch.float64)
+    max_bounds = torch.tensor(np.nanmax(X_data, axis=0), dtype=torch.float64)
+    
+    # Explicitly ensure the temperature bound in the search space is capped
+    temp_idx = feature_cols.index('Reaction Temperature')
+    max_bounds[temp_idx] = MAX_TEMP
+    
+    bounds = torch.stack([min_bounds, max_bounds])
+    
+    # Run a short optimization for testing
+    print("Starting Bayesian Optimization test...")
+    results = run_bo_continuous(
+        dm=dm,
+        bounds=bounds,
+        feature_names=feature_cols,
+        num_iterations=10  # Short run for testing
+    )
+    
+    train_x, train_y, hv_hist, ch4_hist, co2_hist, next_params = results
+    
+    print("\nTest completed successfully!")
+    print(f"Final training set size: {train_x.shape[0]} points")
+    print(f"Best CH4 Conversion found: {ch4_hist[-1]:.2f}%")
+    print(f"Best CO2 Conversion found: {co2_hist[-1]:.2f}%")
+    print(f"Hypervolume history: {hv_hist}")
+    print(f"Suggested next experiment: {next_params}")

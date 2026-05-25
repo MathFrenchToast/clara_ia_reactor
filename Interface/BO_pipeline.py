@@ -167,41 +167,6 @@ class BODataModule(pl.LightningDataModule):
         if self.max_feed is not None:
             df = df[df['Ratio of CH4 in Feed'] <= self.max_feed]
 
-        # Filter by temperature constraint if provided
-        if self.max_temp is not None:
-            df = df[df['Reaction Temperature'] <= self.max_temp]
-
-        # Filter by Ni loading constraint if provided
-        if self.max_loading is not None:
-            df = df[df['Ni Loading'] <= self.max_loading]
-
-        # Filter by reaction time constraint if provided
-        if self.max_time is not None:
-            df = df[df['Reaction Time'] <= self.max_time]
-
-        # Filter by pore size constraint if provided
-        if self.max_pore_size is not None:
-            df = df[df['Pore Size'] <= self.max_pore_size]
-
-        # Filter by pore volume constraint if provided
-        if self.max_pore_volume is not None:
-            df = df[df['Pore Volume'] <= self.max_pore_volume]
-        
-        # Filter by surface area constraint if provided
-        if self.max_surface_area is not None:
-            df = df[df['Surface Area'] <= self.max_surface_area]
-
-        # Filter by H2-TPR Peak Temperature constraint if provided
-        if self.max_H2_TPR_peak_temp is not None:
-            df = df[df['H2-TPR Peak Temperature'] <= self.max_H2_TPR_peak_temp]
-
-        # Filter by Ni particle size constraint if provided
-        if self.max_particle_size is not None:
-            df = df[df['Ni Particle Size'] <= self.max_particle_size]
-
-        # Filter by GHSV constraint if provided
-        if self.max_ghsv is not None:
-            df = df[df['GHSV'] <= self.max_ghsv]
 
         feature_cols = [
             'Ratio of CH4 in Feed', 'Reaction Temperature', 'Ni Loading',
@@ -337,19 +302,34 @@ def run_bo_continuous(
 
         # 6. NEAREST NEIGHBOR
         X_tensor = torch.tensor(dm.X, dtype=torch.float64)
-        distances = torch.norm(X_tensor - new_x, dim=1)
+        
+        # Scale features using bounds for distance calculation to prevent large-scale features from dominating
+        scale_range = bounds_opt[1] - bounds_opt[0]
+        scale_range = torch.where(scale_range == 0, torch.ones_like(scale_range), scale_range)
+        
+        X_scaled = (X_tensor - bounds_opt[0]) / scale_range
+        new_x_scaled = (new_x - bounds_opt[0]) / scale_range
+        
+        distances = torch.norm(X_scaled - new_x_scaled, dim=1)
+        
+        # Mask out points already in train_x to avoid selecting them again
+        dist_to_train = torch.cdist(X_tensor, train_x)
+        already_evaluated = dist_to_train.min(dim=1).values < 1e-4
+        distances[already_evaluated] = float('inf')
+        
         closest_idx = distances.argmin()
 
-        new_y = torch.tensor(dm.y[closest_idx], dtype=torch.float64).unsqueeze(0)
-        
-        # Check for duplicates to prevent GP NotPSDError (singular matrix)
-        if torch.norm(train_x - new_x, dim=1).min() < 1e-4:
-            print(f"Convergence reached at iteration {i+1}. Candidate is too close to existing points.")
+        if distances[closest_idx] == float('inf'):
+            print(f"Convergence reached at iteration {i+1}. All dataset points evaluated.")
             break
+            
+        actual_x = X_tensor[closest_idx].unsqueeze(0)
+        new_y = torch.tensor(dm.y[closest_idx], dtype=torch.float64).unsqueeze(0)
 
-        # 7. UPDATE DATASET
-        train_x = torch.cat([train_x, new_x])
+        # 7. UPDATE DATASET (Using actual dataset points, not candidate points)
+        train_x = torch.cat([train_x, actual_x])
         train_y = torch.cat([train_y, new_y])
+        new_x = actual_x  # Update new_x so the returned suggestion matches the actual point
 
         # 8. CALCUL HYPERVOLUME
         pareto_mask = is_non_dominated(train_y)

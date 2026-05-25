@@ -1,0 +1,9 @@
+torch
+numpy
+pandas
+pytorch-lightning
+scipy
+scikit-learn
+gpytorch
+botorch
+streamlit
